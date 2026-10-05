@@ -1,0 +1,50 @@
+云桥 Go 版：性能与生产可用性自测（2026-10-05）
+
+结论：适合小范围、有人值守试用；当前不建议直接作为正式生产主力版本。上传正确性和会话隔离已有较好的测试证据，但小文件延迟敏感、只读下载续传缺陷及终端流控/长期状态清理仍需处理。
+
+一、测试环境与范围
+Apple M4 Pro / 48 GiB / macOS arm64 / Go 1.26.7。使用 cmd/transferbench，真正的 TCP + SSH 加密 + SFTP 文件系统服务，调用生产 Manager.Connect、TransferDialer 和 Service.Upload。只连接 127.0.0.1 的临时测试服务器，使用生成数据、独立主机密钥及目标目录，未接触用户远程业务文件。
+wall 包含 SSH 认证、SFTP 初始化、上传快照、目录准备及逐文件提交；不含生成测试源、最终离线 SHA-256 校验、JSON 输出和清理。延迟仅加在 SFTP 回复，未限制带宽，未模拟丢包或整个 WAN。正常 OS/APFS 文件缓存参与，未追加 fsync，不代表持久介质速度。
+CPU/RSS 来自 macOS /usr/bin/time -l，覆盖整个进程，包括源生成、客户端、同机服务端与校验；100% 等于约 1 个逻辑核。这不是云桥整个桌面应用（WebView+xterm）的内存/CPU。runtime 堆峰值每 20ms 采样。
+
+二、实测结果（MiB = 2^20 字节，多次运行列中位数）
+four-large-loopback: 每会话 1 文件 × 134217728 B，4 会话，回复额外延迟 0 ms，3 轮；wall 0.490 s，1045.740 MiB/s，进程峰值 RSS 29.00 MiB，进程平均 CPU 386.0%，峰值 SSH 连接 8，SHA 匹配 12 文件。
+four-small-20ms: 每会话 300 文件 × 16384 B，4 会话，回复额外延迟 20 ms，1 轮；wall 10.084 s，1.859 MiB/s，进程峰值 RSS 25.25 MiB，进程平均 CPU 28.0%，峰值 SSH 连接 20，SHA 匹配 1200 文件。
+large-80ms: 每会话 1 文件 × 67108864 B，1 会话，回复额外延迟 80 ms，1 轮；wall 12.460 s，5.136 MiB/s，进程峰值 RSS 17.50 MiB，进程平均 CPU 6.2%，峰值 SSH 连接 2，SHA 匹配 1 文件。
+large-loopback: 每会话 1 文件 × 268435456 B，1 会话，回复额外延迟 0 ms，3 轮；wall 0.420 s，609.639 MiB/s，进程峰值 RSS 18.75 MiB，进程平均 CPU 205.6%，峰值 SSH 连接 2，SHA 匹配 3 文件。
+repeated-20: 每会话 1178 文件 × 16384 B，1 会话，回复额外延迟 0 ms，20 轮；wall 0.428 s，42.993 MiB/s，进程峰值 RSS 22.95 MiB，进程平均 CPU 189.6%，峰值 SSH 连接 5，SHA 匹配 23560 文件。
+single-equivalent-80ms: 每会话 1 文件 × 4915200 B，1 会话，回复额外延迟 80 ms，3 轮；wall 2.843 s，1.649 MiB/s，进程峰值 RSS 17.30 MiB，进程平均 CPU 3.3%，峰值 SSH 连接 2，SHA 匹配 3 文件。
+small-20ms: 每会话 1178 文件 × 16384 B，1 会话，回复额外延迟 20 ms，1 轮；wall 37.512 s，0.491 MiB/s，进程峰值 RSS 18.53 MiB，进程平均 CPU 8.1%，峰值 SSH 连接 5，SHA 匹配 1178 文件。
+small-80ms: 每会话 300 文件 × 16384 B，1 会话，回复额外延迟 80 ms，1 轮；wall 38.125 s，0.123 MiB/s，进程峰值 RSS 17.70 MiB，进程平均 CPU 2.9%，峰值 SSH 连接 5，SHA 匹配 300 文件。
+small-loopback: 每会话 1178 文件 × 16384 B，1 会话，回复额外延迟 0 ms，3 轮；wall 0.451 s，40.799 MiB/s，进程峰值 RSS 20.97 MiB，进程平均 CPU 197.7%，峰值 SSH 连接 5，SHA 匹配 3534 文件。
+
+总计 29,791 个输出文件 / 2.781 GiB，逐文件 SHA-256 全部一致，性能场景无上传失败。
+重点：额外 80ms SFTP 回复延迟下，300 个 16KiB 文件耗时 38.12s；同样 4.6875MiB 数据以一个文件传输只需 2.843s，约快 13.4 倍。此对比没有压缩、没有包括解包成本，只证明逐文件操作是明显瓶颈。
+四会话各 300 小文件、额外 20ms 回复延迟时，总计 1,200 文件在 10.08s 内完成，所有目标内容正确。四会话各一个 128MiB 文件时总吞吐中位数 1,045.7MiB/s（本机回环，仅看本地处理能力）。
+20 轮短时重复：共 23,560 文件，整个进程约 14.97s，全部通过；每轮清理后 goroutine 恒为 3，主动 GC 后堆约 0.63–0.89MiB（含当前轮验证记录）。未见按上传数据量增长的明显资源堆积；这只是短时后端检查，不能证明桌面应用全天运行不泄漏。
+旧 copy 与当前流水线的局部对照：4MiB、20ms 回复延迟、内存 SFTP 协议服务器，旧实现 0.60 MB/s，当前 5.91–5.94 MB/s，约快 9.9 倍。此局部结果不含 SSH 加密、磁盘或批量元数据开销，不能与完整 MiB/s 表直接相除。
+
+三、可靠性验证
+上传/下载断线恢复、取消大批任务但不影响另一任务、peer 失败不截断其他 rename ACK、冲突等待时其他会话继续、上传目标固定：选定用例 race 重复 10 轮全部通过，见 transfer-reliability-2026-10-05.log。
+Go 完整 race、go vet、前端 37 个测试及正式构建结果见相邻日志。首轮全量 race 出现终端退出测试的偶发超时：实为夹具将 stderr 插入拆分 UTF-8 的 stdout 中（\xe4\xbdstderr\r\n\xa0\r\n），不是退出丢数据。仅修正测试夹具并新增单流跨事件分片测试，相关 4 用例各重复 10 次通过；最终全量结果单独留存。
+
+四、发现的问题（区分实测与静态审查）
+1. 实测失败：0444 只读文件下载中断后，临时文件继承只读权限，恢复时无法以写模式重开；报 openat .wails-ssh-....part: permission denied。位置 internal/transfer/transfer.go:379。复现代码与日志：readonly-resume-probe-2026-10-05.go.txt / .log。该专项以预期完成为标准实际失败，未把它计为回归通过。修复方向：checkpoint 保持 0600，提交后再应用远端权限。
+2. 实测队列边界：当前 xterm 同步突发写入累计 50,003,968 字节后抛 write data discarded, use flow control to avoid losing data。此为 Node 合成队列测试，没有 DOM/网络，不是实际终端吞吐量。TerminalPane.vue 的 term.write 没有完成 ACK，Go->Wails->WebView 也无端到端背压。需补输出流控。见 terminal-backpressure-probe-2026-10-05.js / .log。
+3. 实测性能瓶颈：小文件在延迟链路需要大量串行元数据往返。建议增加批量打包上传/远端解包模式；确认正确性和兼容性后再调并发。
+4. 静态审查：App.vue closeSession 后部分 transfers/connectionTabs/cancelledJobs 与 TransferPanel 草稿、RemoteFilePanel 目录缓存没有淘汰，长期开关会话可能累积；本轮没有做完整 GUI 长时内存测试。
+5. 静态审查：每任务限制 4 文件 worker，但无全局任务/已建立连接上限；快照需要约整批大小额外临时磁盘空间。大量同时任务可能叠加资源，应增加队列和空间管理。
+6. 静态审查：transfer_health.go 将所有 SSH 入站数据算作活动；SSH 仍回应心跳但 SFTP 卡住时可能长期等待，缺少按实际 SFTP 进展判断的超时。该边界尚未端到端复现。
+7. 已知功能边界：断点状态只在进程内存，退出应用/崩溃后不自动续传；单文件原子替换不等于整个目录原子发布。
+
+五、生产前建议
+先处理只读下载续传、终端背压与关闭会话的状态回收；增加小文件批量上传及任务总并发控制。随后在独立测试目录、真实目标服务器上验证高峰网络、不同 SFTP 服务端、长时传输与磁盘不足。当前本机测试不能替代真实公网及全桌面长时间验收。
+
+六、可重复执行
+go build -o /tmp/wails-transferbench-final ./cmd/transferbench
+/usr/bin/time -l /tmp/wails-transferbench-final -files 1178 -size 16384 -delay 20ms -runs 1
+/usr/bin/time -l /tmp/wails-transferbench-final -files 300 -size 16384 -delay 80ms -runs 1
+/usr/bin/time -l /tmp/wails-transferbench-final -files 1 -size 4915200 -delay 80ms -runs 3
+/usr/bin/time -l /tmp/wails-transferbench-final -files 1178 -size 16384 -runs 20
+完整参数与测量口径见 cmd/transferbench/README.txt；所有 perf-*.jsonl 保存逐文件 SHA 校验结果，*.resources.txt 保存原始 CPU/RSS。
+本轮仅增加压测工具、复现材料和测试夹具修正，没有修改产品传输行为或替换本机安装包。

@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-05T10:54:38",
+  "bundle_path": "/Applications/云桥.app",
+  "bundle_bytes": 15969293,
+  "zip_path": "/tmp/云桥-macos-arm64-size-check.zip",
+  "zip_bytes": 7097010,
+  "main_process": {
+    "pid": 69506,
+    "physical_footprint_MiB": 49.3,
+    "peak_physical_footprint_MiB": 50.4
+  },
+  "note": "Running process predates recent installed bundle updates; current process observation, not latest-binary peak load measurement.",
+  "associated_processes": [
+    {
+      "name": "main",
+      "pid": 69506,
+      "physical_footprint_MiB": 49.3
+    },
+    {
+      "name": "WebKit GPU",
+      "pid": 69509,
+      "physical_footprint_MiB": 33.7
+    },
+    {
+      "name": "WebKit WebContent",
+      "pid": 69510,
+      "physical_footprint_MiB": 277.4
+    },
+    {
+      "name": "WebKit Networking",
+      "pid": 69511,
+      "physical_footprint_MiB": 6.015625
+    },
+    {
+      "name": "ThemeWidget",
+      "pid": 69512,
+      "physical_footprint_MiB": 12.4
+    },
+    {
+      "name": "open/save panel",
+      "pid": 85375,
+      "physical_footprint_MiB": 57.7
+    },
+    {
+      "name": "QuickLook",
+      "pid": 85392,
+      "physical_footprint_MiB": 7.21875
+    },
+    {
+      "name": "CSExattrCrypto",
+      "pid": 85393,
+      "physical_footprint_MiB": 7.53125
+    }
+  ],
+  "attribution": "System responsibility_get_pid_responsible_for_pid confirms all eight processes belong to PID 69506.",
+  "associated_physical_footprint_sum_MiB": 451.265625,
+  "associated_RSS_snapshot_MiB": 130.625,
+  "memory_caveat": "Per-process physical footprint sum, not deduplicated exclusive RAM. RSS snapshot at 2026-10-05 10:55:56 Asia/Shanghai. Running app predates installed update; not cold-start or newest-version peak benchmark."
+}

@@ -1,0 +1,34 @@
+package transfer
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+)
+
+// Temporary production-readiness probe; its failure is captured in the report.
+func TestProductionReadOnlyDownloadResumeProbe(t *testing.T) {
+	s, events, fixture := recoverableService(t)
+	base := t.TempDir()
+	source := filepath.Join(base, "remote", "readonly.bin")
+	target := filepath.Join(base, "downloads")
+	content := bytes.Repeat([]byte("readonly resume contents\n"), 100000)
+	putFile(t, source, content)
+	if err := os.Chmod(source, 0444); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(target, 0700); err != nil { t.Fatal(err) }
+	var dropped atomic.Bool
+	emit := s.emit
+	s.emit = func(name string, values ...interface{}) {
+		if p, ok := values[0].(Progress); ok && p.Status == "running" && p.Transferred >= 128*1024 && p.Transferred < p.Total && dropped.CompareAndSwap(false, true) {
+			fixture.disconnect()
+		}
+		emit(name, values...)
+	}
+	id, err := s.Download("readonly-probe", remoteName(source), target)
+	if err != nil { t.Fatal(err) }
+	p := waitTransfer(t, events, id, nil)
+	if p.Status != "completed" { t.Fatalf("readonly download failed after interruption: dropped=%v status=%s error=%s", dropped.Load(), p.Status, p.Error) }
+	assertContent(t, filepath.Join(target, "readonly.bin"), content)
+}

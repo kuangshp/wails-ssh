@@ -1,0 +1,11 @@
+/build/bin/
+/frontend/node_modules/
+/frontend/dist/
+.DS_Store
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
