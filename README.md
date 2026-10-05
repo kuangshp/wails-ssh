@@ -4,7 +4,7 @@
 
 ## 本地开发
 
-依赖 Go 1.26+、Node.js 22.12+（推荐 24 LTS）、npm。macOS 需要 Xcode Command Line Tools；Windows 需要 WebView2；Linux 需要 Wails 2 对应的 GTK / WebKit 开发库。参见 [Wails 环境安装](https://v2.wails.io/docs/gettingstarted/installation/)。
+依赖 Go 1.26+、Node.js 24+（推荐 24 LTS）、npm。macOS 需要 Xcode Command Line Tools；Windows 需要 WebView2；Linux 需要 Wails 2 对应的 GTK / WebKit 开发库。参见 [Wails 环境安装](https://v2.wails.io/docs/gettingstarted/installation/)。
 
 ```bash
 cd wails-ssh
@@ -72,24 +72,32 @@ OpenSSH 导入支持 `HostName`、`Port`、`User`、`IdentityFile`（含 `~/` �
 
 ## 构建与检查
 
+开发基线为 Go 1.26、Node.js 24（见 `.node-version`）与 Python 3。Python 用于本地压缩包安全测试，所有系统均需确保 `python3` 命令在 PATH 中；macOS 原生构建还需要 Xcode Command Line Tools。
+
 ```bash
+# 唯一完整检查入口；从没有 node_modules/dist 的干净源码也可直接运行
+node scripts/check.mjs
+# macOS/Linux 可使用相同入口
+make check
+
+# 只检查前端（npm ci、单测、类型检查与构建）
+node scripts/check.mjs frontend
+# 只检查 Go 格式，不会修改文件
+node scripts/check.mjs format
+
 # 当前平台原生包，输出 build/bin/
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build
-
-# 生成绑定
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 generate module
-
-# 前端类型检查 + 构建
-cd frontend && npm ci && npm run build && npm test
-# 回到项目目录后执行 Go 检查
-cd ..
-go test -race ./...
-go vet ./...
+# 修改后端公开接口后，重新生成并审阅绑定
+make bindings
 ```
 
-`.github/workflows/build.yml` 在 macOS Apple Silicon、macOS Intel 和 Windows x64 原生构建，并上传构建产物。当前没有配置签名、公证或自动发布 Release。
+完整检查依次执行冻结依赖安装、前端测试、类型检查与构建、Go 格式检查、`go test -race ./...` 和 `go vet ./...`，前端资源生成完成后才编译 Go。`make test`、`make vet` 同样会先准备资源。Wails 构建也使用 `npm ci`，不在打包时更新锁文件。
 
-测试使用临时 SQLite、本地 SSH/SFTP 测试服务和临时文件，不读取你的连接密码或连接外部服务器。覆盖认证与主机密钥、PTY、传输冲突/取消/回滚、递归文件操作和压缩包路径检查；另覆盖跨会话及同会话任务隔离、连接复用、并发上限、重试互不阻塞、进度限频和目标路径竞争。
+`.github/workflows/build.yml` 在 macOS Apple Silicon、macOS Intel 和 Windows x64 上调用相同检查入口，再原生构建、上传产物。工作流配置不代表这些平台已经通过运行验证；远端执行结果需在合入时核对。当前没有配置签名、公证或自动发布 Release，Linux 尚未纳入构建矩阵。
+
+测试使用临时 SQLite、本地 SSH/SFTP 服务和临时文件，不读取你的连接密码或连接外部服务器。覆盖认证与主机密钥、PTY、传输冲突/取消/回滚、递归文件操作、只读文件中断恢复和压缩包路径检查；前端覆盖接口适配、刷新乱序、凭据查看、命令历史和上传目标隔离。
+
+维护约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，工程审查、未完成项与分阶段验收见 [工程化检查记录](docs/engineering-review-2026-10-05.txt)。
 
 ## 工程结构
 
@@ -107,9 +115,13 @@ wails-ssh/
 │   └── remotearchive/      # 独立目录解压与路径安全检查
 ├── frontend/src/           # Vue 3 + TypeScript + Element Plus + xterm.js
 │   ├── components/         # 连接表格、编辑弹窗、通用弹窗与终端
+│   ├── features/profiles/  # 主机库读取状态与异步请求生命周期
+│   ├── bridge/             # 桌面桥接适配，方法类型来自生成绑定
 │   ├── plugins/            # 按组件注册 Element Plus
 │   └── element-theme.css  # Element Plus 主题与弹窗样式
 ├── frontend/wailsjs/       # Wails 自动生成绑定
+├── scripts/check.mjs       # 本地与 CI 共用的顺序质量检查
+├── docs/                   # 工程审查与后续验收项
 ├── build/                  # 图标与平台打包配置
 └── wails.json
 ```

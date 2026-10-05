@@ -1,0 +1,2 @@
+# Keep gofmt checks consistent across macOS and Windows checkouts.
+*.go text eol=lf

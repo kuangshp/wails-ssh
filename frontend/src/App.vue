@@ -10,13 +10,14 @@ import RemoteFilePanel from './components/RemoteFilePanel.vue'
 import TransferPanel from './components/TransferPanel.vue'
 import { remoteParent, type RemoteAction } from './remote-files'
 import { createUploadRequest } from './transfer-draft'
+import { useProfiles } from './features/profiles/useProfiles'
 import { CommandHistoryCache } from './terminal/history-store'
 import { ClipboardSetText } from '../wailsjs/runtime/runtime'
 import { api, errorText, isDesktop, joinPath, listen, type Profile, type Connection, type Directory, type RemoteEntry, type Transfer, type Conflict, type ConflictChoice, type HostKey } from './api'
 
 interface Session { tabId: string; retryAttempt: number; connection: Connection; profile: Profile; status: 'connected' | 'closed' | 'reconnecting'; error: string; directory: Directory | null; pathInput: string; filesLoading: boolean; filesError: string; request: number; workingPath: string; treeEntries: RemoteEntry[] }
-const profiles = ref<Profile[]>([])
-const groups = ref<string[]>([])
+const profileLibrary = useProfiles(api, fail, isDesktop)
+const { profiles, groups, pageLoading, refresh } = profileLibrary
 const sessions = ref<Session[]>([])
 const sessionSecrets = new Map<string, string>()
 const connectionTabs = new Map<string, string>()
@@ -31,7 +32,6 @@ const selectedGroup = ref('*')
 const recentOnly = ref(false)
 const privateKeyOnly = ref(false)
 const featureNotice = ref('')
-const pageLoading = ref(false)
 const connecting = ref<number | null>(null)
 const showInfo = ref(false)
 const info = ref({ version: '0.1.0', dataDir: '' })
@@ -42,11 +42,6 @@ const filtered = computed(() => profiles.value.filter(profile => {
 const groupTitle = computed(() => privateKeyOnly.value ? 'PEM 私钥' : recentOnly.value ? '最近连接' : selectedGroup.value === '*' ? '所有连接' : selectedGroup.value || '未分组')
 function notify(message: string, kind: 'success' | 'error' = 'success') { ElMessage({ message, type: kind, showClose: true, grouping: true, duration: kind === 'error' ? 8000 : 3500 }) }
 function fail(error: unknown) { notify(errorText(error), 'error') }
-async function refresh() {
-  if (!isDesktop()) return
-  pageLoading.value = true
-  try { const [p,g] = await Promise.all([api.ListProfiles(), api.ListGroups()]); profiles.value = p || []; groups.value = g || [] } catch (error) { fail(error) } finally { pageLoading.value = false }
-}
 function selectGroup(group: string, recent = false) { selectedGroup.value = group; recentOnly.value = recent; privateKeyOnly.value = false; view.value = 'library' }
 function newProfile(): Profile { return { id: 0, name: '', host: '', port: 22, username: 'root', authKind: 'password', keyPath: '', groupName: selectedGroup.value === '*' ? '' : selectedGroup.value, remark: '', lastConnectedAt: '', osId: '', cpuCores: 0, memoryBytes: 0, diskBytes: 0, hasSecret: false } }
 const editor = ref<Profile | null>(null)
@@ -343,7 +338,7 @@ onMounted(() => {
     conflicts.value.push({ ...raw, sessionId: tabId })
   }))
 })
-onBeforeUnmount(() => { for (const id of reconnectTokens.keys()) stopReconnect(id); sessionSecrets.clear(); subscriptions.forEach(fn => fn()); ElMessage.closeAll() })
+onBeforeUnmount(() => { profileLibrary.dispose(); for (const id of reconnectTokens.keys()) stopReconnect(id); sessionSecrets.clear(); subscriptions.forEach(fn => fn()); ElMessage.closeAll() })
 </script>
 
 <template>

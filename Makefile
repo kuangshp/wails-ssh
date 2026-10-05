@@ -1,6 +1,10 @@
 WAILS = go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
-.PHONY: dev build test frontend check bindings
+.PHONY: dev build test frontend check bindings format vet
+
+# The frontend assets must exist before Go compiles main.go's embed directive.
+# Keep separate requested targets ordered even when invoked with make -j.
+.NOTPARALLEL:
 
 dev:
 	$(WAILS) dev
@@ -9,13 +13,19 @@ build:
 	$(WAILS) build
 
 frontend:
-	cd frontend && npm ci && npm run build
+	node scripts/check.mjs frontend
 
 bindings:
 	$(WAILS) generate module
 
-test:
+test: frontend
 	go test -race ./...
 
-check: frontend test
+vet: frontend
 	go vet ./...
+
+format:
+	node scripts/check.mjs format
+
+check:
+	node scripts/check.mjs

@@ -376,8 +376,15 @@ func (s *Service) downloadPath(j *job, client *sftp.Client, remote string, root 
 			return err
 		}
 	}
-	output, err := root.OpenFile(temp, flags, info.Mode().Perm())
+	// Checkpoints must stay private and owner-writable for every copy/verification
+	// retry, even when the remote source is read-only. Apply source permissions
+	// only once verification has succeeded and the file is ready to commit.
+	output, err := root.OpenFile(temp, flags, 0600)
 	if err != nil {
+		return err
+	}
+	if err := output.Chmod(0600); err != nil {
+		output.Close()
 		return err
 	}
 	defer func() {
@@ -424,6 +431,9 @@ func (s *Service) downloadPath(j *job, client *sftp.Client, remote string, root 
 	// edit can otherwise pass the stat checks and commit a mixture of versions.
 	// Verify the completed checkpoint against a fresh source read before rename.
 	if err := verifyDownloadedContent(j.ctx, client, remote, root, temp); err != nil {
+		return err
+	}
+	if err := root.Chmod(temp, info.Mode().Perm()); err != nil {
 		return err
 	}
 	if err := replaceLocal(root, temp, local, approvedOverwrite); err != nil {

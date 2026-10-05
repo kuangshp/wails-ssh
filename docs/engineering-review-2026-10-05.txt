@@ -1,0 +1,103 @@
+云桥 Go 版工程化检查与整改记录
+日期：2026-10-05（Asia/Shanghai）
+审查基线：main / c57df3a。
+范围：Wails 2.15 + Vue 3 + TypeScript 工程，不涉及旧 Rust 项目的改动。
+
+结论
+已有按业务划分的 Go 包、Element Plus 公共组件、TypeScript strict、锁文件、
+本地 SSH/SFTP 与临时数据库回归测试，并非所有代码都堆在入口。
+主要短板是状态生命周期、统一验证门禁、接口单一来源、诊断与发布闭环。
+本轮只完成第一阶段改进；不能据此宣称已达到完整企业发布标准或生产验收。
+
+本轮已落实
+1. 统一质量入口 scripts/check.mjs：Python 预检、npm ci、前端单测、类型检查/
+   构建、gofmt 只读检查、Go race 测试、go vet，严格按顺序执行。
+   Makefile 和三平台 CI 使用同一入口。make test/vet 显式先构建嵌入资源，
+   避免原先干净检出和 make -j 下 frontend/dist 尚不存在就编译 Go。
+2. Node 24 基线、冻结安装和锁文件元数据一致；Wails 打包使用 npm ci。
+   CI 增加 Python 3.12、旧运行取消和超时，避免压缩安全测试因缺 Python 静默跳过。
+   Go 源码通过 .gitattributes 固定 LF，避免 Windows CRLF 检出触发 gofmt 误报。
+3. frontend/src/bridge/desktop.ts：从生成绑定推导方法签名，消除手抄 Backend。
+   缺桌面运行时或旧安装包缺接口时返回可理解错误，保留后端错误与方法接收者。
+   模型字段和事件载荷仍有手写适配，本轮没有完成所有 DTO 统一。
+4. frontend/src/features/profiles/useProfiles.ts：主机库读取状态从 App.vue 抽离。
+   并发刷新只有最新请求能发布列表、分组、错误和 loading；释放后忽略晚到响应。
+   通过注入查询接口测试乱序和失败，无需启动 Wails 或访问真实服务器。
+5. 修复实际可靠性缺陷：远端只读文件的下载 checkpoint 不再沿用只读权限，
+   临时文件保持 0600，完整校验后才应用最终源权限并原子替换。
+   0444/0751 源文件的两次断线恢复、内容、权限、旧目标和临时文件清理均有回归测试。
+6. CONTRIBUTING.md 固化职责边界、异步所有权、接口生成、凭据与数据迁移约定。
+   本轮没有添加框架、全库格式重写，也没有移动所有代码制造大范围变动。
+
+仍需完成的工程问题（按优先级）
+P1 持续终端输出没有端到端流控。
+  证据：internal/sshclient/manager.go 的 terminal:data 发送与
+  frontend/src/components/TerminalPane.vue 的 term.write 没有消费确认。
+  xterm 达到待处理数据上限会丢弃数据；Go 侧有界队列不能覆盖 WebView 的队列。
+  验收：后端发送窗口与 xterm write 完成回调对应；多终端持续输出时内存稳定、
+  字节不丢失、关闭/重连不会把上一代 ACK 应用到新会话。
+
+P1 传输只有每任务并发限制，没有全局容量和完整退出等待。
+  证据：internal/transfer/recovery.go 每次提交新任务，parallel.go 每任务最多4路；
+  service.go Close 发送取消但不等待，app.go 随后关闭 SSH 和数据库。
+  握手限流不等于活动连接总量限制，整批快照也没有磁盘额度；SFTP 卡住而 SSH
+  心跳正常时还缺操作进度 deadline。
+  验收：明确 JobManager 的队列/总连接数/临时磁盘预算、进度超时、CloseAndWait；
+  多窗口压测验证公平性、取消与退出清理，不改变已验证的文件复制/重试核心。
+
+P2 会话状态与缓存没有统一释放。
+  证据：App.vue closeSession 后保留 connectionTabs/transfers/cancelledJobs；
+  TransferPanel 的 drafts/sourceKinds 和 RemoteFilePanel 的 states/listings
+  没有按已关闭会话回收。App.vue 仍管理重连、文件操作、传输和历史。
+  验收：抽 useSessions/useTransfers，稳定 tabId 与连接代次分离；关闭会话统一
+  dispose，保留有活动传输的旧连接映射直到任务终止；反复打开/关闭内存不持续增长。
+
+P2 存储缺少升级协议，凭据仍在 SQLite 明文中。
+  证据：internal/storage/storage.go 使用 CREATE TABLE IF NOT EXISTS，没有
+  schema 版本及有序迁移；secret 直接存储。已有 0600 权限和按需读取，但复制数据库
+  仍会携带凭据。当前数据格式在本轮保持不变。
+  验收：有序迁移/失败回滚/旧库升级测试；独立 CredentialStore 对接系统凭据存储，
+  保留用户明确的查看/复制能力，迁移失败不得丢失原凭据。
+
+P2 错误协议与诊断能力不足。
+  证据：HOST_KEY_UNKNOWN 字符串内嵌 JSON、前端用错误文案正则判断重连；大部分
+  失败只有临时提示，没有按任务/会话关联的有界诊断记录。
+  验收：稳定错误 code/retryable/details 与事件 DTO；结构化脱敏日志、限量保留与
+  可选导出。不得记录密码、私钥、完整命令/终端输出。
+
+P2 发布可追溯与平台验收不完整。
+  证据：app.go、wails.json、前端包仍为 0.1.0；安装包没有展示 commit/build time，
+  缺 Release 清单/校验和/签名公证，Linux 未纳入矩阵。
+  验收：单一版本来源、构建 commit/dirty/平台/校验和、tag 与版本一致性、安装启动
+  冒烟测试；有凭证后配置 macOS 签名公证和 Windows 签名。
+  CI 配置已改不代表远端 Actions 已通过，本轮没有修改仓库分支保护或发布策略。
+
+P2 静态规范与集成覆盖仍不完整。
+  已有 TS strict 和 gofmt，本轮未加 ESLint/Prettier、漏洞扫描、依赖升级自动化、
+  生成绑定漂移门禁和持续组件集成测试。下一阶段先引入正确性 lint 规则，避免
+  全库纯格式变更；建立少量“组件→会话捕获→桥接→进度回流”测试。
+
+后续分批边界
+A. 终端消费窗口、传输资源预算和退出等待：运行可靠性优先。
+B. useSessions/useTransfers 与后端 ProfileService/ConnectionService：按状态拥有者
+   迁移，一批只迁一个业务边界，保留现有域包和组件。
+C. 类型化事件/错误、受控诊断、schema 迁移、凭据存储与可追溯发布。
+不需要微服务、复杂 DDD 或通用 Repository；先使现有桌面单体可验证、可升级、可维护。
+
+验证记录
+1. macOS ARM64：将本次完整源码复制到临时目录，不复制 node_modules/dist，初始化
+   本地 Git 索引后运行 node scripts/check.mjs。未连接外部 SSH 或修改用户连接数据。
+   前端 58/58 测试通过，vue-tsc 和 Vite 生产构建通过；gofmt、go test -race ./...
+   和 go vet ./... 全部通过。完整日志（仅在检查机器上保留，不随仓库分发）：
+   /tmp/cloudbridge-engineering-check-20261005-retry.log
+2. 首次干净安装中，npm ci 返回成功但 Rollup macOS ARM 原生可选依赖未安装完成，
+   Vite 构建门禁捕获了该问题。当前机器使用 npmmirror；日志出现可选依赖安装失败，
+   具体底层原因尚未确认。没有修改依赖版本或添加静默修复；相同锁文件重装后成功，
+   随后重新运行整个统一入口通过。不能将这次重试解释成已修复 npm 的安装异常。
+3. Wails 2.15.0 原生 darwin/arm64 生产打包通过，生成 build/bin/wails-ssh.app。
+   只有已有的 -lobjc 重复链接警告；工程检查阶段未重新安装或关闭正在运行的应用。
+4. git diff --check 通过。未执行远端 Actions、Windows、Intel macOS 或 Linux
+   实机验证；原生构建通过也不代表已完成签名、公证或生产压测。
+5. 后续按用户要求重新构建并安装到 /Applications/云桥.app，旧应用已备份。
+   安装后二进制与构建产物 SHA-256 一致，启动进程路径正确；替换前后 servers.db
+   和 known_hosts 文件校验一致，原有连接数据保持不变。
