@@ -2,6 +2,16 @@
 
 基于现有 `rust-ssh-studio` 重新实现的跨平台 SSH / SFTP 桌面客户端。独立工程，使用 **Wails v2.15.0 + Vue 3 + TypeScript + Element Plus**，Go 后端管理 SSH、SFTP 和 SQLite，xterm.js 提供真实交互式终端。
 
+## 下载安装
+
+前往 [GitHub Releases 下载最新版本](https://github.com/kuangshp/wails-ssh/releases/latest)，在 Assets 中选择：
+
+- Windows 10/11（Intel / AMD 64 位）：`wails-ssh-windows-amd64-setup.exe` 安装版，或 `wails-ssh-windows-amd64-portable.zip` 便携版。
+- Mac M 系列芯片（macOS 12+）：`wails-ssh-macos-arm64.zip`。
+- Mac Intel 芯片（macOS 12+）：`wails-ssh-macos-amd64.zip`。
+
+Mac 解压后将 `wails-ssh.app` 拖入“应用程序”。当前版本未配置发布者证书签名和 Apple 公证，首次打开可能触发系统安全提示；安装、WebView2 依赖及 SHA-256 校验说明见 [发布说明](docs/release-notes.md)。
+
 ## 本地开发
 
 依赖 Go 1.26+、Node.js 24+（推荐 24 LTS）、npm。macOS 需要 Xcode Command Line Tools；Windows 需要 WebView2；Linux 需要 Wails 2 对应的 GTK / WebKit 开发库。参见 [Wails 环境安装](https://v2.wails.io/docs/gettingstarted/installation/)。
@@ -34,7 +44,7 @@ npm run dev
 - Element Plus 连接表格、编辑表单、操作弹窗、消息提示与传输进度，统一深灰/绿色主题、表单、权限矩阵、文件菜单和传输卡片，保留 Rust 版布局：主机库的系统、名称、地址、信息、备注和操作列，以及左文件树、中间终端、右传输管理的工作区。
 - 连接库：搜索、分组、备注、新增/编辑/删除，保存最近连接时间；连接后异步探测 Linux 系统、CPU、内存和磁盘信息。
 - 密码、PEM / OpenSSH 私钥和加密私钥口令认证；可保留、更新或移除保存的凭据。
-- 多标签 PTY 终端、ANSI / Unicode、窗口尺寸同步、复制粘贴；按主机保存最近 200 条命令，输入前缀后按 Tab 回填最近匹配项，不自动执行。无历史匹配时 Tab 交给远端 shell；方向键历史及 Ctrl+C / Ctrl+D / Ctrl+L 保持原生行为。
+- 多标签 PTY 终端、ANSI / Unicode、窗口尺寸同步、复制粘贴；按主机保存最近 200 条命令，通过工具栏或 Ctrl/Cmd+Shift+H 手动搜索和回填。Tab 补全、Esc、方向键历史及 Ctrl+C / Ctrl+D / Ctrl+L 均由远端 Shell 处理，输入时不显示历史建议弹层。
 - 每次新 SSH 连接进入终端时显示原版服务器欢迎信息：操作系统、主机名称、内核、架构、CPU 型号/核心、内存与根盘使用、IP 地址及运行时间；独立只读通道采集，在命令提示符前输出，超时或失败不阻止终端启动，切换标签不重复输出。
 - SSH 心跳、12 秒连接超时、网络断开自动重连和手动重连；正常退出不重连，重连保留终端输出，可取消。
 - 连接编辑保留基本信息、连接设置等分类，可测试当前表单而不保存；不支持的跳板和代理保持明确说明。
@@ -93,7 +103,9 @@ make bindings
 
 完整检查依次执行冻结依赖安装、前端测试、类型检查与构建、Go 格式检查、`go test -race ./...` 和 `go vet ./...`，前端资源生成完成后才编译 Go。`make test`、`make vet` 同样会先准备资源。Wails 构建也使用 `npm ci`，不在打包时更新锁文件。
 
-`.github/workflows/build.yml` 在 macOS Apple Silicon、macOS Intel 和 Windows x64 上调用相同检查入口，再原生构建、上传产物。工作流配置不代表这些平台已经通过运行验证；远端执行结果需在合入时核对。当前没有配置签名、公证或自动发布 Release，Linux 尚未纳入构建矩阵。
+`.github/workflows/build.yml` 在 macOS Apple Silicon、macOS Intel 和 Windows x64 上调用相同检查入口，再原生构建、上传产物。Windows 同时生成 NSIS 安装版和便携版。推送与 `wails.json` 中 `info.productVersion` 一致的 `v版本号` 标签后，三个平台检查和构建全部成功才自动创建 GitHub Release，附带安装包、压缩包和 SHA-256 校验文件。当前未配置发布者证书签名或 Apple 公证，Linux 尚未纳入构建矩阵。
+
+发布新版本：更新 `wails.json` 的 `info.productVersion`、`frontend/package.json` 与 `frontend/package-lock.json` 的版本，以及 `docs/release-notes.md`，提交后推送分支和版本标签，例如 `git tag v0.1.0 && git push origin main v0.1.0`。发布结果需在 GitHub Actions 和 Releases 核对。
 
 测试使用临时 SQLite、本地 SSH/SFTP 服务和临时文件，不读取你的连接密码或连接外部服务器。覆盖认证与主机密钥、PTY、传输冲突/取消/回滚、递归文件操作、只读文件中断恢复和压缩包路径检查；前端覆盖接口适配、刷新乱序、凭据查看、命令历史和上传目标隔离。
 
@@ -128,9 +140,9 @@ wails-ssh/
 
 ## 与 Rust 版本的差异
 
-本版终端使用完整的 xterm.js。在可识别的 Shell 提示符下，普通单行输入执行后会记录到本机，按主机隔离并保留最近 200 条。输入前缀后按 Tab 填入最近匹配的完整命令，再按 Enter 执行；Esc 隐藏该次提示后可继续使用远端 Tab 补全。工具栏或 Ctrl/Cmd+Shift+H 可打开命令历史，支持搜索、填入和单独的立即执行操作。
+本版终端使用完整的 xterm.js。在可识别的 Shell 提示符下，普通单行输入执行后会记录到本机，按主机隔离并保留最近 200 条。输入时不弹出历史建议，Tab 补全交给远端 Shell。工具栏或 Ctrl/Cmd+Shift+H 可手动打开命令历史，支持搜索、填入和单独的立即执行操作。
 
-历史依赖远端回显和可靠提示符（例如 `root@host:~#`、`[user@host dir]$`），不适用于所有自定义提示符。密码输入、备用屏幕及无法确认的输入不记录；多行命令不提供历史补全。命令开头加空格可跳过本机自动记录。没有历史匹配时 Tab 原样交给远端，方向键仍由远端 shell 处理。
+历史依赖远端回显和可靠提示符（例如 `root@host:~#`、`[user@host dir]$`），不适用于所有自定义提示符。密码输入、备用屏幕、多行命令及无法确认的输入不记录。命令开头加空格可跳过本机自动记录。Tab、Esc 和方向键均保持远端 Shell 的原有行为。
 
 终端目录通过 OSC 7 或完整空闲提示符识别；只有目录名的提示符（例如 `[root@host app]#`）不能可靠解析绝对路径。自动重连回到账户主目录，不重放断线前的命令。跳板机、代理、RDP、Telnet、隧道保持原版未启用状态。
 

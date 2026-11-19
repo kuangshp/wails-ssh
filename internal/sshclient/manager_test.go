@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -283,7 +284,11 @@ func TestPasswordSessionPTYOutputResizeSFTPAndFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if connection.ProfileID != 7 || connection.Home != f.root {
+	home := filepath.ToSlash(f.root)
+	if runtime.GOOS == "windows" {
+		home = "/" + home
+	}
+	if connection.ProfileID != 7 || connection.Home != home {
 		t.Fatalf("unexpected connection: %+v", connection)
 	}
 	if err := m.Write(connection.ID, "too early"); err == nil {
@@ -335,7 +340,7 @@ func TestPasswordSessionPTYOutputResizeSFTPAndFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := files.Create(filepath.Join(f.root, "transfer.txt"))
+	file, err := files.Create(connection.Home + "/transfer.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +402,7 @@ func TestUnknownHostTrustAndMismatch(t *testing.T) {
 		t.Fatal("trust not idempotent:", err)
 	}
 	stat, err := os.Stat(m.knownHostsPath)
-	if err != nil || stat.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && stat.Mode().Perm() != 0600) {
 		t.Fatalf("known_hosts permissions: %v %v", stat, err)
 	}
 	connection, err := m.Connect(p, "secret", 80, 24)

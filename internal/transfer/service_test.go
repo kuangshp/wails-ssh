@@ -85,7 +85,12 @@ func assertContent(t *testing.T, name string, want []byte) {
 
 func symlinkOrSkip(t *testing.T, old, new string) {
 	t.Helper()
-	if err := os.Symlink(old, new); err != nil {
+	// Relative targets also keep the local Windows SFTP fixture's links POSIX-compatible.
+	target, err := filepath.Rel(filepath.Dir(new), old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, new); err != nil {
 		if runtime.GOOS == "windows" {
 			t.Skipf("Windows symlink privilege unavailable: %v", err)
 		}

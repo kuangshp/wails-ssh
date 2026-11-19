@@ -111,7 +111,7 @@ func TestHistoryRemembersRecentCommandsAfterReopen(t *testing.T) {
 	}
 }
 func TestImportLegacyReadOnlyAndDedup(t *testing.T) {
-	legacy := filepath.Join(t.TempDir(), "old.db")
+	legacy := filepath.Join(t.TempDir(), "old #连接.db")
 	db, err := sql.Open("sqlite", legacy)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ Host plain
 	if len(profiles) != 3 {
 		t.Fatal(profiles)
 	}
-	if profiles[1].KeyPath != "/Users/test/.ssh/my key" || profiles[1].Port != 2222 {
+	if profiles[1].KeyPath != filepath.Join("/Users/test", ".ssh", "my key") || profiles[1].Port != 2222 {
 		t.Fatal(profiles[1])
 	}
 	if profiles[2].Username != "root" {

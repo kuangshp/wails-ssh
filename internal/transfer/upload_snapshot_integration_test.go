@@ -139,7 +139,7 @@ func TestUploadMissingSourceFailsBeforeOpeningRemoteTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := waitTransfer(t, events, id, nil)
-	if result.Status != "failed" || !strings.Contains(result.Error, missing) || fixture.dials.Load() != 0 {
+	if result.Status != "failed" || !strings.Contains(result.Error, fmt.Sprintf("%q", missing)) || fixture.dials.Load() != 0 {
 		t.Fatalf("preflight failure mutated server or lost source: %+v dials=%d", result, fixture.dials.Load())
 	}
 	assertContent(t, filepath.Join(target, "index.html"), []byte("keep index"))

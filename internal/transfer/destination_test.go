@@ -72,7 +72,7 @@ func TestUploadKeepsResolvedDestinationWhenAncestorAliasChanges(t *testing.T) {
 				switchAlias.Do(func() {
 					switchErr = os.Remove(alias)
 					if switchErr == nil {
-						switchErr = os.Symlink(redirected, alias)
+						switchErr = os.Symlink(filepath.Base(redirected), alias)
 					}
 				})
 				if switchErr != nil {
@@ -145,7 +145,7 @@ func TestEnsureRemoteDirectoryUsesResolvedParentForMutation(t *testing.T) {
 	if err := os.Remove(alias); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(redirected, alias); err != nil {
+	if err := os.Symlink(filepath.Base(redirected), alias); err != nil {
 		t.Fatal(err)
 	}
 	j := newJob(context.Background(), func() {}, Progress{}, nil)

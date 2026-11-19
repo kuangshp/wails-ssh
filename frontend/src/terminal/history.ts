@@ -61,19 +61,11 @@ export function safeHistoryCommand(command: string): boolean {
   return !!command.trim() && !/^\s/.test(command) && command.length <= MAX_COMMAND_LENGTH && !/[\u0000-\u001f\u007f]/.test(command)
 }
 
-/** History arrives newest first. Completion is deliberately prefix-only and case-sensitive. */
-export function historyMatches(history: readonly string[], query: string, limit = 5): string[] {
-  if (!safeHistoryCommand(query)) return []
-  return [...new Set(history)].filter(command => safeHistoryCommand(command) && command !== query && command.startsWith(query)).slice(0, limit)
-}
-
 export interface HistoryKey { key: string; type: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing?: boolean }
-export function historyKeyAction(event: HistoryKey, state: { ready: boolean; visible: boolean; hasMatch: boolean; dismissed: boolean }): 'complete' | 'dismiss' | 'history' | 'pass' {
+/** Only explicit history shortcuts are local; Tab and Escape belong to the shell. */
+export function historyKeyAction(event: HistoryKey, state: { ready: boolean; visible: boolean }): 'history' | 'pass' {
   if (event.type !== 'keydown' || event.isComposing || !state.visible || !state.ready) return 'pass'
   if (event.key.toLowerCase() === 'h' && event.shiftKey && (event.ctrlKey || event.metaKey) && !event.altKey) return 'history'
-  if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || state.dismissed || !state.hasMatch) return 'pass'
-  if (event.key === 'Tab') return 'complete'
-  if (event.key === 'Escape') return 'dismiss'
   return 'pass'
 }
 

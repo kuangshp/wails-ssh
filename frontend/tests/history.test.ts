@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { afterTerminalDrain, historyKeyAction, historyMatches, ShellHistoryTracker } from '../src/terminal/history.ts'
+import { afterTerminalDrain, historyKeyAction, ShellHistoryTracker } from '../src/terminal/history.ts'
 import type { HistoryBuffer, HistoryKey, HistoryMarker } from '../src/terminal/history.ts'
 import xterm from '@xterm/xterm'
 
@@ -147,35 +147,26 @@ test('leading spaces opt out of memory and Ctrl+C discards the draft', () => {
   assert.equal(cancelled.tracker.observe(cancelled.buffer, cancelled.buffer.marker, 4), undefined)
 })
 
-test('history completion prefers recent unique case-sensitive prefixes and limits to five', () => {
-  assert.deepEqual(historyMatches(['git status', 'git log', 'git status', 'echo git', 'Git branch', 'git show', 'git diff', 'git commit', 'git reset', 'git\nunsafe'], 'git'), ['git status', 'git log', 'git show', 'git diff', 'git commit'])
-  assert.deepEqual(historyMatches(['git status'], ''), [])
-  assert.deepEqual(historyMatches(['git status'], 'Git'), [])
-  assert.deepEqual(historyMatches(['git status'], 'status'), [])
-  assert.deepEqual(historyMatches(['git status'], 'git status'), [])
-})
-
 const tab: HistoryKey = { key: 'Tab', type: 'keydown', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false }
-test('actual key routing completes only a ready visible shell prefix; every other Tab reaches the remote', () => {
+test('Tab, Escape and arrows always remain with the remote shell, including a recognized input prefix', () => {
   const { buffer, tracker } = shell()
-  const history = ['git status', 'git log']
-  const route = (event: HistoryKey = tab, visible = true, dismissed = false) => {
+  const route = (event: HistoryKey = tab, visible = true) => {
     const query = tracker.query(buffer)
-    return historyKeyAction(event, { ready: query !== undefined, visible, dismissed, hasMatch: query !== undefined && historyMatches(history, query).length > 0 })
+    return historyKeyAction(event, { ready: query !== undefined, visible })
   }
   assert.equal(route(), 'pass') // An empty prompt leaves filesystem completion alone.
   tracker.input('git', buffer, 1)
   assert.equal(route(), 'pass') // Unacknowledged echo must not use a stale prefix.
   buffer.screen([prompt + 'git'])
   tracker.observe(buffer, buffer.marker, 2)
-  assert.equal(route(), 'complete')
+  assert.equal(tracker.query(buffer), 'git')
+  assert.equal(route(), 'pass')
   assert.equal(route(tab, false), 'pass')
-  assert.equal(route(tab, true, true), 'pass')
-  for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey', 'isComposing']) assert.equal(route({ ...tab, [modifier]: true }), 'pass')
+  for (const key of ['Tab', 'Escape', 'ArrowUp', 'ArrowDown']) {
+    assert.equal(route({ ...tab, key }), 'pass')
+    for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey', 'isComposing']) assert.equal(route({ ...tab, key, [modifier]: true }), 'pass')
+  }
   assert.equal(route({ ...tab, type: 'keyup' }), 'pass')
-  assert.equal(route({ ...tab, key: 'Escape' }), 'dismiss')
-  assert.equal(route({ ...tab, key: 'ArrowUp' }), 'pass')
-  assert.equal(route({ ...tab, key: 'ArrowDown' }), 'pass')
   buffer.cursorX--
   assert.equal(route(), 'pass') // Editing in the middle remains the shell's job.
   buffer.cursorX++
@@ -186,10 +177,13 @@ test('actual key routing completes only a ready visible shell prefix; every othe
 })
 
 test('history shortcut is explicit, visibility- and shell-gated', () => {
-  const state = { ready: true, visible: true, dismissed: false, hasMatch: false }
+  const state = { ready: true, visible: true }
   assert.equal(historyKeyAction({ ...tab, key: 'H', shiftKey: true, metaKey: true }, state), 'history')
   assert.equal(historyKeyAction({ ...tab, key: 'h', shiftKey: true, ctrlKey: true }, state), 'history')
   assert.equal(historyKeyAction({ ...tab, key: 'H', shiftKey: true, metaKey: true }, { ...state, ready: false }), 'pass')
+  assert.equal(historyKeyAction({ ...tab, key: 'H', shiftKey: true, metaKey: true }, { ...state, visible: false }), 'pass')
+  assert.equal(historyKeyAction({ ...tab, key: 'H', shiftKey: true, metaKey: true, isComposing: true }, state), 'pass')
+  assert.equal(historyKeyAction({ ...tab, key: 'h', ctrlKey: true }, state), 'pass')
 })
 
 test('real xterm echo, wide-character wrapping and scrollback markers preserve the submitted command', async () => {

@@ -234,6 +234,10 @@ func (s *Store) ImportLegacy(filename string) (int, error) {
 		return 0, err
 	}
 	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(absolute), RawQuery: "mode=ro"}
+	// A drive letter must be a path, not the authority in file://C:/... .
+	if !strings.HasPrefix(uri.Path, "/") {
+		uri.Path = "/" + uri.Path
+	}
 	source, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return 0, err

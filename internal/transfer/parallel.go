@@ -131,6 +131,13 @@ func (s *Service) parallelUpload(j *job, sources []string, remoteDir string) err
 			return fmt.Errorf("准备上传时本地目录发生变化，请等待文件生成完成后重试: %s", filepath.Join(dir.root.Name(), dir.local))
 		}
 	}
+	// Windows keeps an open Root directory locked; only snapshots are needed now.
+	for _, root := range roots {
+		if err := root.Close(); err != nil {
+			return err
+		}
+	}
+	roots = nil
 	files = prepared
 	canonicalDirs := make(map[string]string, len(directories))
 	if err := s.retry(j, func(client *sftp.Client) error {

@@ -1,20 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { api, errorText, listen } from '../api'
 import { TerminalTransport } from '../terminal/transport'
 import { oscWorkingDirectory, promptWorkingDirectory } from '../terminal/cwd'
-import { afterTerminalDrain, historyKeyAction, historyMatches, safeHistoryCommand, ShellHistoryTracker } from '../terminal/history'
+import { afterTerminalDrain, historyKeyAction, safeHistoryCommand, ShellHistoryTracker } from '../terminal/history'
 
-const props = defineProps<{ sessionId: string; visible: boolean; history?: string[] }>()
+const props = defineProps<{ sessionId: string; visible: boolean }>()
 const emit = defineEmits<{ closed: [error: string]; error: [message: string]; cwd: [path: string]; command: [command: string]; history: [] }>()
 const host = ref<HTMLDivElement>()
 const commandTracker = new ShellHistoryTracker()
-const inputQuery = ref<string>()
-const dismissedQuery = ref<string>()
-const suggestions = computed(() => props.visible && inputQuery.value !== undefined && dismissedQuery.value !== inputQuery.value ? historyMatches(props.history || [], inputQuery.value) : [])
 const term = new Terminal({
   cursorBlink: true, cursorStyle: 'bar', fontSize: 12.5, lineHeight: 1.4,
   fontFamily: '"SFMono-Regular", Menlo, Monaco, Consolas, monospace',
@@ -47,8 +44,7 @@ function readPrompt(final = false) {
   // editing context while the application's alternate screen is active.
   const command = commandTracker.observe(buffer.type === 'normal' ? buffer : term.buffer.normal, offset => buffer.type === 'normal' ? term.registerMarker(offset) : undefined, Date.now(), final || buffer.type !== 'normal')
   if (command) emit('command', command)
-  if (buffer.type !== 'normal') { resetHistoryInput(); return }
-  updateHistoryQuery()
+  if (buffer.type !== 'normal') { commandTracker.reset(); return }
   const cursorRow = buffer.baseY + buffer.cursorY
   const cursorLine = buffer.getLine(cursorRow)
   if (!cursorLine || cursorLine.translateToString(true, buffer.cursorX).trim()) return
@@ -58,18 +54,6 @@ function readPrompt(final = false) {
     line = (buffer.getLine(row - 1)?.translateToString(false) || '') + line
   }
   reportDirectory(promptWorkingDirectory(line))
-}
-
-function updateHistoryQuery() {
-  const query = disposed || ended ? undefined : commandTracker.query(term.buffer.active)
-  if (query !== undefined && query !== dismissedQuery.value) dismissedQuery.value = undefined
-  inputQuery.value = query
-}
-
-function resetHistoryInput() {
-  commandTracker.reset()
-  inputQuery.value = undefined
-  dismissedQuery.value = undefined
 }
 
 function requireShellInput(command: string) {
@@ -84,12 +68,9 @@ async function replaceInput(command: string) {
   // paste mode, and neither write contains the Enter key.
   const clearing = transport!.write('\x15')
   term.paste(command)
-  updateHistoryQuery()
   await clearing
   focus()
 }
-
-function fillSuggestion(command: string) { void replaceInput(command).catch(error => emit('error', errorText(error))) }
 
 function fitVisible() {
   if (!props.visible || !host.value?.clientWidth || !host.value.clientHeight || disposed || ended) return
@@ -104,7 +85,7 @@ function resize() {
 function focus() { if (!disposed && !ended && props.visible) term.focus() }
 function clear() {
   if (disposed) return
-  resetHistoryInput()
+  commandTracker.reset()
   term.clear()
   if (!ended) void transport?.write('\x0c')
 }
@@ -112,7 +93,7 @@ function paste(text: string) { if (!disposed && !ended) { term.paste(text); focu
 async function execute(command: string) {
   requireShellInput(command)
   const version = connectionVersion
-  resetHistoryInput()
+  commandTracker.reset()
   await transport!.write(`\x15${command}\r`)
   if (version === connectionVersion && !disposed && !ended) { emit('command', command); focus() }
 }
@@ -121,7 +102,7 @@ defineExpose({ focus, clear, paste, execute, replaceInput })
 async function connect(sessionId: string) {
   const version = ++connectionVersion
   transport?.dispose()
-  resetHistoryInput()
+  commandTracker.reset()
   activeSessionId = sessionId
   ended = false
   drainingClose = false
@@ -163,12 +144,11 @@ onMounted(() => {
     const version = connectionVersion
     ended = true
     drainingClose = true
-    inputQuery.value = undefined
     transport?.dispose()
     afterTerminalDrain((data, done) => term.write(data, done), () => !disposed && version === connectionVersion && event.sessionId === activeSessionId, () => {
       readPrompt(true)
       drainingClose = false
-      resetHistoryInput()
+      commandTracker.reset()
       term.writeln('\r\n\x1b[90m[连接已结束]\x1b[0m')
       emit('closed', event.error || '')
     })
@@ -176,23 +156,16 @@ onMounted(() => {
   const data = term.onData(value => {
     if (disposed || ended) return
     commandTracker.input(value, term.buffer.active)
-    updateHistoryQuery()
     void transport?.write(value)
   })
   term.attachCustomKeyEventHandler(event => {
-    const query = commandTracker.query(term.buffer.active)
-    const matches = query === undefined ? [] : historyMatches(props.history || [], query)
     const action = historyKeyAction(event, {
-      ready: !disposed && !ended && query !== undefined,
+      ready: !disposed && !ended && commandTracker.query(term.buffer.active) !== undefined,
       visible: props.visible,
-      hasMatch: !!matches.length,
-      dismissed: query !== undefined && dismissedQuery.value === query,
     })
     if (action === 'pass') return true
     event.preventDefault()
-    if (action === 'complete') fillSuggestion(matches[0]!)
-    else if (action === 'dismiss') dismissedQuery.value = query
-    else emit('history')
+    emit('history')
     return false
   })
   // onResize fires only when rows/columns actually change, including font/zoom fits.
@@ -216,7 +189,7 @@ watch(() => props.visible, async visible => {
 })
 onBeforeUnmount(() => {
   disposed = true
-  resetHistoryInput()
+  commandTracker.reset()
   transport?.dispose()
   cleanups.forEach(fn => fn())
   observer?.disconnect()
@@ -228,10 +201,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="terminal-pane">
     <div ref="host" class="terminal-host" />
-    <aside v-if="suggestions.length" class="terminal-history-suggestions" aria-label="历史命令提示">
-      <div class="terminal-history-heading"><span>Tab 补全 · Esc 隐藏</span><button type="button" title="搜索历史（Ctrl/Cmd+Shift+H）" @mousedown.prevent @click="emit('history')">搜索历史</button></div>
-      <button v-for="(command, index) in suggestions" :key="command" type="button" class="terminal-history-option" :class="{ first: index === 0 }" :title="command" @mousedown.prevent @click="fillSuggestion(command)"><span>{{ command }}</span><small v-if="index === 0">Tab</small></button>
-    </aside>
   </div>
 </template>
 
@@ -240,12 +209,4 @@ onBeforeUnmount(() => {
 .terminal-host { height: 100%; width: 100%; overflow: hidden; }
 .terminal-host :deep(.xterm) { height: 100%; }
 .terminal-host :deep(.xterm-viewport) { scrollbar-width: thin; scrollbar-color: #354256 transparent; }
-.terminal-history-suggestions { position: absolute; right: 16px; bottom: 38px; z-index: 2; width: min(480px, calc(100% - 32px)); padding: 6px; border: 1px solid #35483f; border-radius: 8px; background: #19221ef5; box-shadow: 0 6px 24px #0008; }
-.terminal-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 6px 6px; color: #92aa9d; font-size: 10px; }
-.terminal-history-heading button { padding: 2px 0; border: 0; color: #a1d4b8; background: transparent; cursor: pointer; font-size: 10px; }
-.terminal-history-option { display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 8px; border: 0; border-radius: 4px; background: transparent; color: #dce6df; cursor: pointer; text-align: left; font: 11px/1.5 Menlo, Monaco, Consolas, monospace; }
-.terminal-history-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.terminal-history-option small { margin-left: auto; flex-shrink: 0; color: #7fb794; font-size: 9px; }
-.terminal-history-option.first, .terminal-history-option:hover { background: #294033; }
-.terminal-history-option:focus-visible, .terminal-history-heading button:focus-visible { outline: 1px solid #71daca; }
 </style>
