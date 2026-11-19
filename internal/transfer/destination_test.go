@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,6 +57,10 @@ func TestUploadKeepsResolvedDestinationWhenAncestorAliasChanges(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(filepath.Join(original, "target"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// EvalSymlinks expands Windows 8.3 names, while the SFTP fixture preserves them.
+	if runtime.GOOS == "windows" {
+		resolved = filepath.Join(original, "target")
 	}
 	expectedPaths := make(map[string]bool, len(contents))
 	for name := range contents {
