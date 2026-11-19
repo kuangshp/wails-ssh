@@ -1,0 +1,47 @@
+name: Add DMG to existing release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        default: v0.1.0
+permissions:
+  contents: write
+concurrency:
+  group: release-dmg-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify published Mac applications
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p build/bin
+          gh release download "$RELEASE_TAG" --pattern 'wails-ssh-macos-*.zip' --pattern SHA256SUMS.txt --dir build/bin
+          cd build/bin
+          for archive in wails-ssh-macos-*.zip; do
+            awk -v file="$archive" '$2 == file {print; found=1} END {if (!found) exit 1}' SHA256SUMS.txt | shasum -a 256 -c -
+          done
+      - name: Create and verify DMG images
+        run: |
+          for architecture in arm64 amd64; do
+            ditto -x -k "build/bin/wails-ssh-macos-$architecture.zip" "build/bin/$architecture"
+            bash scripts/package-macos.sh "build/bin/$architecture/wails-ssh.app" "build/bin/wails-ssh-macos-$architecture.dmg"
+          done
+          cd build/bin
+          awk '$2 !~ /\.dmg$/' SHA256SUMS.txt > SHA256SUMS.updated.txt
+          shasum -a 256 *.dmg >> SHA256SUMS.updated.txt
+          mv SHA256SUMS.updated.txt SHA256SUMS.txt
+      - name: Add DMG downloads to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" build/bin/*.dmg build/bin/SHA256SUMS.txt --clobber
+          gh release edit "$RELEASE_TAG" --notes-file docs/release-notes.md

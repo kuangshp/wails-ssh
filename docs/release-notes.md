@@ -6,6 +6,8 @@
 | --- | --- | --- |
 | `wails-ssh-windows-amd64-setup.exe` | Windows 10/11，Intel / AMD 64 位 | 运行安装程序；自动检查并按需安装 WebView2（需要网络） |
 | `wails-ssh-windows-amd64-portable.zip` | Windows 10/11，Intel / AMD 64 位 | 解压后运行 `wails-ssh.exe`；需要已安装 Microsoft Edge WebView2 Runtime |
+| `wails-ssh-macos-arm64.dmg` | Apple Silicon Mac（M 系列），macOS 12+ | 打开磁盘映像，将 `wails-ssh.app` 拖到旁边的 Applications 文件夹 |
+| `wails-ssh-macos-amd64.dmg` | Intel Mac，macOS 12+ | 打开磁盘映像，将 `wails-ssh.app` 拖到旁边的 Applications 文件夹 |
 | `wails-ssh-macos-arm64.zip` | Apple Silicon Mac（M 系列），macOS 12+ | 解压，将 `wails-ssh.app` 拖入“应用程序” |
 | `wails-ssh-macos-amd64.zip` | Intel Mac，macOS 12+ | 解压，将 `wails-ssh.app` 拖入“应用程序” |
 
