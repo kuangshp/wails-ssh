@@ -105,7 +105,7 @@ make bindings
 
 `.github/workflows/build.yml` 在 macOS Apple Silicon、macOS Intel 和 Windows x64 上调用相同检查入口，再原生构建、上传产物。Windows 同时生成 NSIS 安装版和便携版。推送与 `wails.json` 中 `info.productVersion` 一致的 `v版本号` 标签后，三个平台检查和构建全部成功才自动创建 GitHub Release，附带安装包、压缩包和 SHA-256 校验文件。当前未配置发布者证书签名或 Apple 公证，Linux 尚未纳入构建矩阵。
 
-发布新版本：更新 `wails.json` 的 `info.productVersion`、`frontend/package.json` 与 `frontend/package-lock.json` 的版本，以及 `docs/release-notes.md`，提交后推送分支和版本标签，例如 `git tag v0.1.0 && git push origin main v0.1.0`。发布结果需在 GitHub Actions 和 Releases 核对。
+发布新版本：更新 `wails.json` 的 `info.productVersion`、`app.go` 的 `version` 常量、`frontend/package.json` 与 `frontend/package-lock.json` 的版本，以及 `docs/release-notes.md`，提交后推送分支和版本标签，例如 `git tag v0.1.0 && git push origin main v0.1.0`。发布结果需在 GitHub Actions 和 Releases 核对。
 
 测试使用临时 SQLite、本地 SSH/SFTP 服务和临时文件，不读取你的连接密码或连接外部服务器。覆盖认证与主机密钥、PTY、传输冲突/取消/回滚、递归文件操作、只读文件中断恢复和压缩包路径检查；前端覆盖接口适配、刷新乱序、凭据查看、命令历史和上传目标隔离。
 
