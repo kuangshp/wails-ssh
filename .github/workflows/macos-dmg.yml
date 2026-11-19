@@ -1,7 +1,7 @@
 name: Add DMG to existing release
 on:
   push:
-    tags: ['dmg-v*']
+    tags: ['dmg-v*', 'asset-names-v*']
   workflow_dispatch:
     inputs:
       tag:
@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   package:
+    if: ${{ !startsWith(github.ref_name, 'asset-names-') }}
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -32,9 +33,9 @@ jobs:
           done
       - name: Create and verify DMG images
         run: |
-          for architecture in arm64 amd64; do
-            ditto -x -k "build/bin/wails-ssh-macos-$architecture.zip" "build/bin/$architecture"
-            bash scripts/package-macos.sh "build/bin/$architecture/wails-ssh.app" "build/bin/wails-ssh-macos-$architecture.dmg"
+          for variant in Apple-M-series Intel; do
+            ditto -x -k "build/bin/wails-ssh-macos-$variant.zip" "build/bin/$variant"
+            bash scripts/package-macos.sh "build/bin/$variant/wails-ssh.app" "build/bin/wails-ssh-macos-$variant.dmg"
           done
           cd build/bin
           awk '$2 !~ /\.dmg$/' SHA256SUMS.txt > SHA256SUMS.updated.txt
@@ -45,5 +46,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release upload "${RELEASE_TAG#dmg-}" build/bin/*.dmg build/bin/SHA256SUMS.txt --clobber
+          gh release upload "${RELEASE_TAG#dmg-}" --clobber build/bin/SHA256SUMS.txt \
+            'build/bin/wails-ssh-macos-Apple-M-series.dmg#macOS 苹果 M 系列芯片 · DMG 安装包' \
+            'build/bin/wails-ssh-macos-Intel.dmg#macOS Intel 芯片 · DMG 安装包'
           gh release edit "${RELEASE_TAG#dmg-}" --notes-file docs/release-notes.md
+  rename:
+    if: startsWith(github.ref_name, 'asset-names-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clarify Mac download names and labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/rename-macos-release.py

@@ -18,10 +18,10 @@ jobs:
         include:
           - os: macos-15
             platform: darwin/arm64
-            artifact: wails-ssh-macos-arm64
+            artifact: wails-ssh-macos-Apple-M-series
           - os: macos-15-intel
             platform: darwin/amd64
-            artifact: wails-ssh-macos-amd64
+            artifact: wails-ssh-macos-Intel
           - os: windows-2022
             platform: windows/amd64
             artifact: wails-ssh-windows-amd64
@@ -96,4 +96,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" release/* --verify-tag --title "云桥 $RELEASE_TAG" --notes-file docs/release-notes.md
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --title "云桥 $RELEASE_TAG" --notes-file docs/release-notes.md \
+            release/wails-ssh-windows-* release/SHA256SUMS.txt \
+            'release/wails-ssh-macos-Apple-M-series.dmg#macOS 苹果 M 系列芯片 · DMG 安装包' \
+            'release/wails-ssh-macos-Intel.dmg#macOS Intel 芯片 · DMG 安装包' \
+            'release/wails-ssh-macos-Apple-M-series.zip#macOS 苹果 M 系列芯片 · ZIP 压缩包' \
+            'release/wails-ssh-macos-Intel.zip#macOS Intel 芯片 · ZIP 压缩包'

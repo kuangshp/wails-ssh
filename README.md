@@ -7,8 +7,8 @@
 前往 [GitHub Releases 下载最新版本](https://github.com/kuangshp/wails-ssh/releases/latest)，在 Assets 中选择：
 
 - Windows 10/11（Intel / AMD 64 位）：`wails-ssh-windows-amd64-setup.exe` 安装版，或 `wails-ssh-windows-amd64-portable.zip` 便携版。
-- Mac M 系列芯片（macOS 12+）：`wails-ssh-macos-arm64.dmg`，也提供 ZIP 版。
-- Mac Intel 芯片（macOS 12+）：`wails-ssh-macos-amd64.dmg`，也提供 ZIP 版。
+- Mac M 系列芯片（macOS 12+）：`wails-ssh-macos-Apple-M-series.dmg`，也提供 ZIP 版。
+- Mac Intel 芯片（macOS 12+）：`wails-ssh-macos-Intel.dmg`，也提供 ZIP 版。
 
 Mac 打开 DMG 后，将 `wails-ssh.app` 拖到旁边的 Applications 文件夹；ZIP 版解压后拖入“应用程序”。当前版本未配置发布者证书签名和 Apple 公证，首次打开可能触发系统安全提示；安装、WebView2 依赖及 SHA-256 校验说明见 [发布说明](docs/release-notes.md)。
 
